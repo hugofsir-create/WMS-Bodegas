@@ -23,6 +23,7 @@ export interface Transaction {
   uom: string;
   cantidad: number;
   warehouse: 'Escorihuela Gascón' | 'La Rural';
+  estado: 'Apto' | 'No Apto';
 }
 
 export type WarehouseType = 'Escorihuela Gascón' | 'La Rural';

@@ -17,7 +17,10 @@ import {
   Trash2,
   Download,
   Sun,
-  Moon
+  Moon,
+  Edit,
+  ShieldAlert,
+  ShieldCheck
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { motion, AnimatePresence } from 'motion/react';
@@ -165,7 +168,12 @@ export default function App() {
   const [searchTerm, setSearchTerm] = useState('');
   const [activeTab, setActiveTab] = useState<'inventory' | 'history' | 'master'>('inventory');
   const [isManualModalOpen, setIsManualModalOpen] = useState(false);
+  const [isAddMaterialModalOpen, setIsAddMaterialModalOpen] = useState(false);
   const [manualType, setManualType] = useState<'ingreso' | 'egreso'>('ingreso');
+  const [manualState, setManualState] = useState<'Apto' | 'No Apto'>('Apto');
+  const [inventoryStateFilter, setInventoryStateFilter] = useState<'Apto' | 'No Apto'>('Apto');
+  const [editingMaterial, setEditingMaterial] = useState<Material | null>(null);
+
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     return (localStorage.getItem('theme') as 'light' | 'dark') || 'light';
   });
@@ -195,17 +203,18 @@ export default function App() {
 
   // Derived State: Inventory
   const inventory = useMemo(() => {
-    const inv: Record<WarehouseType, Record<string, number>> = {
-      'Escorihuela Gascón': {},
-      'La Rural': {}
+    const inv: Record<WarehouseType, Record<'Apto' | 'No Apto', Record<string, number>>> = {
+      'Escorihuela Gascón': { 'Apto': {}, 'No Apto': {} },
+      'La Rural': { 'Apto': {}, 'No Apto': {} }
     };
 
     transactions.forEach(t => {
-      const current = inv[t.warehouse][t.sku] || 0;
+      const state = t.estado || 'Apto';
+      const current = inv[t.warehouse][state][t.sku] || 0;
       if (t.tipo === 'ingreso') {
-        inv[t.warehouse][t.sku] = current + t.cantidad;
+        inv[t.warehouse][state][t.sku] = current + t.cantidad;
       } else {
-        inv[t.warehouse][t.sku] = current - t.cantidad;
+        inv[t.warehouse][state][t.sku] = current - t.cantidad;
       }
     });
 
@@ -260,7 +269,8 @@ export default function App() {
         tipo,
         uom: String(row.unidad_de_medida || row.UOM || row['unidad de medida'] || 'Unidad'),
         cantidad: Number(row.cantidad || row.CANTIDAD || 0),
-        warehouse: activeWarehouse
+        warehouse: activeWarehouse,
+        estado: (row.estado || row.ESTADO || 'Apto') as 'Apto' | 'No Apto'
       })).filter(t => t.sku && t.cantidad > 0);
 
       // Validate SKUs exist in Master
@@ -277,7 +287,7 @@ export default function App() {
   };
 
   const exportCurrentInventory = () => {
-    const data = Object.entries(inventory[activeWarehouse]).map(([sku, cantidad]) => {
+    const data = Object.entries(inventory[activeWarehouse][inventoryStateFilter]).map(([sku, cantidad]) => {
       const material = materials.find(m => m.sku === sku);
       const cp = material?.cajasPorPallet;
       const cant = cantidad as number;
@@ -285,6 +295,7 @@ export default function App() {
         SKU: sku,
         Descripción: material?.descripcion || 'N/A',
         Stock: cant,
+        Estado: inventoryStateFilter,
         'Cajas x Pallet': cp || 0,
         Pallets: cp ? (cant / cp).toFixed(2) : '0.00'
       };
@@ -450,16 +461,25 @@ export default function App() {
             
             <div className="flex gap-3">
               {activeTab === 'master' ? (
-                <div className="relative">
-                  <Button variant="secondary" className="gap-2">
-                    <FileSpreadsheet className="w-4 h-4" /> Importar Maestro
-                    <input 
-                      type="file" 
-                      accept=".xlsx,.xls" 
-                      onChange={handleMaterialMasterImport}
-                      className="absolute inset-0 opacity-0 cursor-pointer"
-                    />
+                <div className="flex gap-3">
+                  <Button 
+                    variant="primary" 
+                    className="gap-2"
+                    onClick={() => setIsAddMaterialModalOpen(true)}
+                  >
+                    <Plus className="w-4 h-4" /> Nuevo Material
                   </Button>
+                  <div className="relative">
+                    <Button variant="secondary" className="gap-2">
+                      <FileSpreadsheet className="w-4 h-4" /> Importar Maestro
+                      <input 
+                        type="file" 
+                        accept=".xlsx,.xls" 
+                        onChange={handleMaterialMasterImport}
+                        className="absolute inset-0 opacity-0 cursor-pointer"
+                      />
+                    </Button>
+                  </div>
                 </div>
               ) : (
                 <>
@@ -500,8 +520,8 @@ export default function App() {
                   <p className="text-2xl font-black text-slate-900 dark:text-white">{Object.keys(inventory[activeWarehouse]).length}</p>
                 </div>
                 <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-100 dark:border-blue-900/30">
-                  <p className="text-[10px] text-blue-600 dark:text-blue-400 uppercase font-bold mb-1">Total Unidades</p>
-                  <p className="text-2xl font-black text-blue-700 dark:text-blue-500">{(Object.values(inventory[activeWarehouse]) as number[]).reduce((a, b) => a + Number(b), 0)}</p>
+                  <p className="text-[10px] text-blue-600 dark:text-blue-400 uppercase font-bold mb-1">Total Unidades ({inventoryStateFilter})</p>
+                  <p className="text-2xl font-black text-blue-700 dark:text-blue-500">{(Object.values(inventory[activeWarehouse][inventoryStateFilter]) as number[]).reduce((a, b) => a + Number(b), 0)}</p>
                 </div>
               </div>
             </div>
@@ -542,7 +562,27 @@ export default function App() {
                 exit={{ opacity: 0, scale: 0.98 }}
                 className="flex-1 min-h-0"
               >
-                <Card title="Planilla de Stock Actual" className="h-full">
+                <div className="flex gap-2 mb-4 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl w-fit">
+                  <button 
+                    onClick={() => setInventoryStateFilter('Apto')}
+                    className={cn(
+                      "flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all",
+                      inventoryStateFilter === 'Apto' ? "bg-white dark:bg-slate-700 text-green-600 shadow-sm" : "text-slate-400 hover:text-slate-500"
+                    )}
+                  >
+                    <ShieldCheck className="w-4 h-4" /> SUB-DEPÓSITO APTO
+                  </button>
+                  <button 
+                    onClick={() => setInventoryStateFilter('No Apto')}
+                    className={cn(
+                      "flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all",
+                      inventoryStateFilter === 'No Apto' ? "bg-white dark:bg-slate-700 text-red-600 shadow-sm" : "text-slate-400 hover:text-slate-500"
+                    )}
+                  >
+                    <ShieldAlert className="w-4 h-4" /> SUB-DEPÓSITO NO APTO
+                  </button>
+                </div>
+                <Card title={`Planilla de Stock Actual - ${inventoryStateFilter}`} className="h-full">
                   <div className="overflow-auto flex-1 h-[450px]">
                     <table className="w-full border-collapse text-left">
                       <thead className="sticky top-0 bg-white dark:bg-slate-900 z-10">
@@ -555,16 +595,17 @@ export default function App() {
                         </tr>
                       </thead>
                       <tbody className="text-sm text-slate-600 dark:text-slate-400">
-                        {Object.keys(inventory[activeWarehouse]).length === 0 ? (
+                        {Object.keys(inventory[activeWarehouse][inventoryStateFilter]).length === 0 ? (
                           <tr>
-                            <td colSpan={5} className="p-12 text-center text-slate-400 italic">No se detectaron registros para esta bodega</td>
+                            <td colSpan={5} className="p-12 text-center text-slate-400 italic">No se detectaron registros para esta bodega y estado</td>
                           </tr>
                         ) : (
-                          Object.entries(inventory[activeWarehouse])
-                            .filter(([sku]) => {
+                          Object.entries(inventory[activeWarehouse][inventoryStateFilter])
+                            .filter(([sku, cantidad]) => {
                                const m = materials.find(m => m.sku === sku);
-                               return sku.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                                      m?.descripcion.toLowerCase().includes(searchTerm.toLowerCase());
+                               return (sku.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                                      m?.descripcion.toLowerCase().includes(searchTerm.toLowerCase())) &&
+                                      cantidad !== 0;
                             })
                             .map(([sku, cantidad]) => {
                               const material = materials.find(m => m.sku === sku);
@@ -681,12 +722,20 @@ export default function App() {
                             <td className="p-4 font-medium text-slate-700 dark:text-slate-300">{m.descripcion}</td>
                             <td className="p-4 text-right font-mono text-xs text-blue-600 dark:text-blue-400 font-bold">{m.cajasPorPallet}</td>
                             <td className="p-4 text-right">
-                               <button 
-                                  onClick={() => setMaterials(prev => prev.filter(p => m.sku !== p.sku))}
-                                  className="text-slate-300 hover:text-red-500 transition-colors p-1"
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </button>
+                               <div className="flex justify-end gap-2">
+                                 <button 
+                                    onClick={() => setEditingMaterial(m)}
+                                    className="text-slate-300 hover:text-blue-500 transition-colors p-1"
+                                  >
+                                    <Edit className="w-4 h-4" />
+                                  </button>
+                                  <button 
+                                    onClick={() => setMaterials(prev => prev.filter(p => m.sku !== p.sku))}
+                                    className="text-slate-300 hover:text-red-500 transition-colors p-1"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                               </div>
                             </td>
                           </tr>
                         ))}
@@ -747,26 +796,46 @@ export default function App() {
                     tipo: manualType,
                     uom: uom || 'Unidad',
                     cantidad,
-                    warehouse: activeWarehouse
+                    warehouse: activeWarehouse,
+                    estado: manualState
                   };
 
                   setTransactions(prev => [...prev, newT]);
                   setIsManualModalOpen(false);
                 }} className="space-y-6">
-                  <div className="flex p-1 bg-slate-100 dark:bg-slate-800 rounded-xl">
+                  <div className="grid grid-cols-2 gap-2 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl">
                     {(['ingreso', 'egreso'] as const).map(type => (
                       <button
                         key={type}
                         type="button"
                         onClick={() => setManualType(type)}
                         className={cn(
-                          "flex-1 py-2.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all",
+                          "flex-1 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all",
                           manualType === type 
                             ? "bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-sm" 
                             : "text-slate-400 hover:text-slate-600"
                         )}
                       >
                         {type}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl">
+                    {(['Apto', 'No Apto'] as const).map(st => (
+                      <button
+                        key={st}
+                        type="button"
+                        onClick={() => setManualState(st)}
+                        className={cn(
+                          "flex-1 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-2",
+                          manualState === st 
+                            ? (st === 'Apto' ? "bg-white dark:bg-slate-700 text-green-600 shadow-sm" : "bg-white dark:bg-slate-700 text-red-600 shadow-sm")
+                            : "text-slate-400 hover:text-slate-600"
+                        )}
+                      >
+                        {st === 'Apto' ? <ShieldCheck className="w-3 h-3" /> : <ShieldAlert className="w-3 h-3" />}
+                        {st}
                       </button>
                     ))}
                   </div>
@@ -825,6 +894,166 @@ export default function App() {
                   {materials.length === 0 && (
                     <p className="text-[10px] text-red-500 font-bold uppercase text-center bg-red-50 dark:bg-red-900/20 p-2 rounded-lg">Debe cargar materiales en el maestro primero</p>
                   )}
+                </form>
+              </div>
+            </motion.div>
+          </div>
+        )}
+
+        {/* --- Edit Material Modal --- */}
+        {editingMaterial && (
+          <div className="fixed inset-0 z-[101] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }} 
+              animate={{ opacity: 1 }} 
+              exit={{ opacity: 0 }}
+              onClick={() => setEditingMaterial(null)}
+              className="absolute inset-0 bg-slate-900/60 backdrop-blur-md"
+            />
+            <motion.div 
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="relative bg-white dark:bg-slate-900 w-full max-w-lg rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.2)] overflow-hidden"
+            >
+              <div className="p-8 space-y-8">
+                <div className="space-y-1">
+                  <h2 className="text-xl font-bold text-slate-900 dark:text-white tracking-tight">Editar Material</h2>
+                  <p className="text-xs text-slate-400 uppercase font-bold tracking-widest italic">SKU: {editingMaterial.sku}</p>
+                </div>
+
+                <form onSubmit={(e) => {
+                  e.preventDefault();
+                  const formData = new FormData(e.currentTarget);
+                  const descripcion = formData.get('descripcion') as string;
+                  const cajasPorPallet = Number(formData.get('cajasPorPallet'));
+
+                  setMaterials(prev => prev.map(m => 
+                    m.sku === editingMaterial.sku 
+                      ? { ...m, descripcion, cajasPorPallet }
+                      : m
+                  ));
+                  setEditingMaterial(null);
+                }} className="space-y-6">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold uppercase text-slate-400 tracking-wider">Descripción</label>
+                    <input 
+                      type="text" 
+                      name="descripcion" 
+                      defaultValue={editingMaterial.descripcion}
+                      required 
+                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-3 rounded-xl text-sm outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all dark:text-slate-200"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold uppercase text-slate-400 tracking-wider">Cajas por Pallet</label>
+                    <input 
+                      type="number" 
+                      name="cajasPorPallet" 
+                      defaultValue={editingMaterial.cajasPorPallet}
+                      required 
+                      min="1"
+                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-3 rounded-xl text-sm outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all dark:text-slate-200"
+                    />
+                  </div>
+
+                  <div className="pt-6 flex gap-3">
+                    <Button type="submit" className="flex-1 py-3.5 rounded-xl text-lg font-bold">
+                      Guardar Cambios
+                    </Button>
+                    <button 
+                      type="button" 
+                      onClick={() => setEditingMaterial(null)}
+                      className="px-6 text-sm font-bold text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </motion.div>
+          </div>
+        )}
+
+        {/* --- Add Material Modal --- */}
+        {isAddMaterialModalOpen && (
+          <div className="fixed inset-0 z-[102] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }} 
+              animate={{ opacity: 1 }} 
+              exit={{ opacity: 0 }}
+              onClick={() => setIsAddMaterialModalOpen(false)}
+              className="absolute inset-0 bg-slate-900/60 backdrop-blur-md"
+            />
+            <motion.div 
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="relative bg-white dark:bg-slate-900 w-full max-w-lg rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.2)] overflow-hidden"
+            >
+              <div className="p-8 space-y-8">
+                <div className="space-y-1">
+                  <h2 className="text-xl font-bold text-slate-900 dark:text-white tracking-tight">Nuevo Material</h2>
+                  <p className="text-xs text-slate-400 uppercase font-bold tracking-widest italic">Maestro de Materiales</p>
+                </div>
+
+                <form onSubmit={(e) => {
+                  e.preventDefault();
+                  const formData = new FormData(e.currentTarget);
+                  const sku = formData.get('sku') as string;
+                  const descripcion = formData.get('descripcion') as string;
+                  const cajasPorPallet = Number(formData.get('cajasPorPallet'));
+
+                  if (materials.find(m => m.sku === sku)) {
+                    alert('Este SKU ya existe en el maestro');
+                    return;
+                  }
+
+                  setMaterials(prev => [...prev, { sku, descripcion, cajasPorPallet }]);
+                  setIsAddMaterialModalOpen(false);
+                }} className="space-y-6">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold uppercase text-slate-400 tracking-wider">Código SKU</label>
+                    <input 
+                      type="text" 
+                      name="sku" 
+                      required 
+                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-3 rounded-xl text-sm outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all dark:text-slate-200"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold uppercase text-slate-400 tracking-wider">Descripción</label>
+                    <input 
+                      type="text" 
+                      name="descripcion" 
+                      required 
+                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-3 rounded-xl text-sm outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all dark:text-slate-200"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold uppercase text-slate-400 tracking-wider">Cajas por Pallet</label>
+                    <input 
+                      type="number" 
+                      name="cajasPorPallet" 
+                      required 
+                      min="1"
+                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-3 rounded-xl text-sm outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all dark:text-slate-200"
+                    />
+                  </div>
+
+                  <div className="pt-6 flex gap-3">
+                    <Button type="submit" className="flex-1 py-3.5 rounded-xl text-lg font-bold">
+                      Añadir Material
+                    </Button>
+                    <button 
+                      type="button" 
+                      onClick={() => setIsAddMaterialModalOpen(false)}
+                      className="px-6 text-sm font-bold text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
                 </form>
               </div>
             </motion.div>
