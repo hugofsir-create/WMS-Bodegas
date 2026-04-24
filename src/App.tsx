@@ -512,6 +512,17 @@ export default function App() {
               {activeTab === 'master' ? (
                 <div className="flex gap-3">
                   <Button 
+                    variant="danger" 
+                    className="gap-2"
+                    onClick={() => {
+                      if (confirm('¿Está seguro de que desea eliminar TODO el Maestro de Materiales? Esta acción no se puede deshacer.')) {
+                        setMaterials([]);
+                      }
+                    }}
+                  >
+                    <Trash2 className="w-4 h-4" /> Eliminar Todo
+                  </Button>
+                  <Button 
                     variant="primary" 
                     className="gap-2"
                     onClick={() => setIsAddMaterialModalOpen(true)}
