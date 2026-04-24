@@ -232,13 +232,17 @@ export default function App() {
       const workbook = XLSX.read(data, { type: 'binary' });
       const sheetName = workbook.SheetNames[0];
       const sheet = workbook.Sheets[sheetName];
-      const json = XLSX.utils.sheet_to_json(sheet) as any[];
+      const json = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as any[][];
 
-      const newMaterials: Material[] = json.map(row => ({
-        sku: String(row.sku || row.SKU || ''),
-        descripcion: String(row.descripcion || row.DESCRIPCIÓN || row.description || ''),
-        cajasPorPallet: Number(row.cantidad_cajas_por_pallet || row['cantidad de cajas por pallet'] || row.cajas_x_pallet || 0)
-      })).filter(m => m.sku);
+      // Detectar si la primera fila es cabecera (buscando 'sku' en la primera celda)
+      const hasHeader = json[0] && String(json[0][0]).toLowerCase().includes('sku');
+      const startRow = hasHeader ? 1 : 0;
+
+      const newMaterials: Material[] = json.slice(startRow).map(row => ({
+        sku: String(row[0] || '').trim(),
+        descripcion: String(row[1] || '').trim(),
+        cajasPorPallet: Number(row[2] || 0)
+      })).filter(m => m.sku && m.sku !== '');
 
       setMaterials(prev => {
         const existingSkus = new Set(prev.map(m => m.sku));
