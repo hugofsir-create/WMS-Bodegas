@@ -232,22 +232,40 @@ export default function App() {
       const workbook = XLSX.read(data, { type: 'binary' });
       const sheetName = workbook.SheetNames[0];
       const sheet = workbook.Sheets[sheetName];
-      const json = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as any[][];
+      
+      // Try header-based first
+      const jsonHeader = XLSX.utils.sheet_to_json(sheet) as any[];
+      let newMaterials: Material[] = [];
 
-      // Detectar si la primera fila es cabecera (buscando 'sku' en la primera celda)
-      const hasHeader = json[0] && String(json[0][0]).toLowerCase().includes('sku');
-      const startRow = hasHeader ? 1 : 0;
+      if (jsonHeader.length > 0) {
+        newMaterials = jsonHeader.map(row => {
+          const keys = Object.keys(row);
+          const skuKey = keys.find(k => k.toLowerCase().includes('sku') || k.toLowerCase().includes('código') || k.toLowerCase().includes('codigo'));
+          const descKey = keys.find(k => k.toLowerCase().includes('descrip') || k.toLowerCase().includes('nombre') || k.toLowerCase().includes('articulo'));
+          const cpKey = keys.find(k => k.toLowerCase().includes('caja') || k.toLowerCase().includes('pallet') || k.toLowerCase().includes('bulto'));
 
-      const newMaterials: Material[] = json.slice(startRow).map(row => ({
-        sku: String(row[0] || '').trim(),
-        descripcion: String(row[1] || '').trim(),
-        cajasPorPallet: Number(row[2] || 0)
-      })).filter(m => m.sku && m.sku !== '');
+          return {
+            sku: String(row[skuKey || ''] || '').trim(),
+            descripcion: String(row[descKey || ''] || '').trim(),
+            cajasPorPallet: Number(row[cpKey || ''] || 0)
+          };
+        }).filter(m => m.sku);
+      }
+
+      // If header-based failed to find any valid SKU, try positional
+      if (newMaterials.length === 0) {
+        const raw = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as any[][];
+        newMaterials = raw.map(row => ({
+          sku: String(row[0] || '').trim(),
+          descripcion: String(row[1] || '').trim(),
+          cajasPorPallet: Number(row[2] || 0)
+        })).filter(m => m.sku && m.sku.toLowerCase() !== 'sku');
+      }
 
       setMaterials(prev => {
-        const existingSkus = new Set(prev.map(m => m.sku));
-        const uniqueNew = newMaterials.filter(m => !existingSkus.has(m.sku));
-        return [...prev, ...uniqueNew];
+        const materialMap = new Map(prev.map(m => [m.sku, m]));
+        newMaterials.forEach(m => materialMap.set(m.sku, m));
+        return Array.from(materialMap.values());
       });
     };
     reader.readAsBinaryString(file);
@@ -264,23 +282,50 @@ export default function App() {
       const workbook = XLSX.read(data, { type: 'binary' });
       const sheetName = workbook.SheetNames[0];
       const sheet = workbook.Sheets[sheetName];
+      
       const json = XLSX.utils.sheet_to_json(sheet) as any[];
+      let newTransactions: Transaction[] = [];
 
-      const newTransactions: Transaction[] = json.map(row => ({
-        id: crypto.randomUUID(),
-        date: new Date().toISOString(),
-        sku: String(row.sku || row.SKU || ''),
-        tipo,
-        uom: String(row.unidad_de_medida || row.UOM || row['unidad de medida'] || 'Unidad'),
-        cantidad: Number(row.cantidad || row.CANTIDAD || 0),
-        warehouse: activeWarehouse,
-        estado: (row.estado || row.ESTADO || 'Apto') as 'Apto' | 'No Apto'
-      })).filter(t => t.sku && t.cantidad > 0);
+      if (json.length > 0) {
+        newTransactions = json.map(row => {
+          const keys = Object.keys(row);
+          const skuKey = keys.find(k => k.toLowerCase().includes('sku') || k.toLowerCase().includes('código') || k.toLowerCase().includes('codigo'));
+          const cantKey = keys.find(k => k.toLowerCase().includes('cant') || k.toLowerCase().includes('unidades') || k.toLowerCase().includes('stock'));
+          const uomKey = keys.find(k => k.toLowerCase().includes('uom') || k.toLowerCase().includes('unidad') || k.toLowerCase().includes('medida'));
+          const stateKey = keys.find(k => k.toLowerCase().includes('estado') || k.toLowerCase().includes('calidad') || k.toLowerCase().includes('tipo'));
+
+          return {
+            id: crypto.randomUUID(),
+            date: new Date().toISOString(),
+            sku: String(row[skuKey || ''] || '').trim(),
+            tipo,
+            uom: String(row[uomKey || ''] || 'Unidad').trim(),
+            cantidad: Number(row[cantKey || ''] || 0),
+            warehouse: activeWarehouse,
+            estado: (String(row[stateKey || ''] || 'Apto').toLowerCase().includes('no') ? 'No Apto' : 'Apto') as 'Apto' | 'No Apto'
+          };
+        }).filter(t => t.sku && t.cantidad > 0);
+      }
+
+      // Positional fallback
+      if (newTransactions.length === 0) {
+        const raw = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as any[][];
+        newTransactions = raw.map(row => ({
+          id: crypto.randomUUID(),
+          date: new Date().toISOString(),
+          sku: String(row[0] || '').trim(),
+          tipo,
+          uom: String(row[1] || 'Unidad').trim(),
+          cantidad: Number(row[2] || 0),
+          warehouse: activeWarehouse,
+          estado: 'Apto'
+        })).filter(t => t.sku && t.sku.toLowerCase() !== 'sku' && t.cantidad > 0);
+      }
 
       // Validate SKUs exist in Master
       const invalidSkus = newTransactions.filter(t => !materials.find(m => m.sku === t.sku));
       if (invalidSkus.length > 0) {
-        alert(`Los siguientes SKUs no existen en el Maestro: ${invalidSkus.map(t => t.sku).join(', ')}`);
+        alert(`Los siguientes SKUs no existen en el Maestro: ${invalidSkus.map(t => t.sku).join(', ')}. Por favor, cárguelos primero.`);
         return;
       }
 
