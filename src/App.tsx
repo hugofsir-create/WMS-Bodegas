@@ -205,7 +205,7 @@ export default function App() {
   const inventory = useMemo(() => {
     const inv: Record<WarehouseType, Record<'Apto' | 'No Apto', Record<string, number>>> = {
       'Escorihuela Gascón': { 'Apto': {}, 'No Apto': {} },
-      'La Rural': { 'Apto': {}, 'No Apto': {} }
+      'Rutini wines': { 'Apto': {}, 'No Apto': {} }
     };
 
     transactions.forEach(t => {
@@ -350,7 +350,7 @@ export default function App() {
         <div className="flex-1 py-4 overflow-y-auto px-4 space-y-6">
           <div>
             <div className="px-3 text-[10px] font-semibold text-slate-500 uppercase tracking-[0.2em] mb-3 italic">Depósitos</div>
-            {(['Escorihuela Gascón', 'La Rural'] as WarehouseType[]).map(wh => (
+            {(['Escorihuela Gascón', 'Rutini wines'] as WarehouseType[]).map(wh => (
               <button
                 key={wh}
                 onClick={() => setActiveWarehouse(wh)}

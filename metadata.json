@@ -1,6 +1,6 @@
 {
   "name": "WMS Bodegas ",
-  "description": "Sistema de gestión de almacenes para Escorihuela Gascón y La Rural con soporte de importación masiva desde Excel.",
+  "description": "Sistema de gestión de almacenes para Escorihuela Gascón y Rutini wines con soporte de importación masiva desde Excel.",
   "requestFramePermissions": [],
   "majorCapabilities": []
 }

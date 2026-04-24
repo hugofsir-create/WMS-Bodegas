@@ -22,8 +22,8 @@ export interface Transaction {
   tipo: 'ingreso' | 'egreso';
   uom: string;
   cantidad: number;
-  warehouse: 'Escorihuela Gascón' | 'La Rural';
+  warehouse: 'Escorihuela Gascón' | 'Rutini wines';
   estado: 'Apto' | 'No Apto';
 }
 
-export type WarehouseType = 'Escorihuela Gascón' | 'La Rural';
+export type WarehouseType = 'Escorihuela Gascón' | 'Rutini wines';
